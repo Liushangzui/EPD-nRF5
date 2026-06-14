@@ -507,77 +507,105 @@ function drawMonthDays(x, y, tm, lunarBase, data) {
 
 // ==================== 现代单日日历渲染 ====================
 
-// 装饰元素: 梅兰竹菊
-function drawPlumBlossom(cx, cy, r) {
+// 装饰元素: 梅兰竹菊 (每日随机)
+
+// 梅花: 枝干 + 花朵 + 花苞
+function drawPlumBlossom(cx, cy, h) {
+  const r = h / 2 - 1;
+  ctx.strokeStyle = BLACK; ctx.lineWidth = 1;
+  // 斜枝干
+  ctx.beginPath(); ctx.moveTo(cx - h / 2, cy + h / 2); ctx.lineTo(cx + h / 4, cy - h / 4); ctx.stroke();
+  // 主花5瓣
+  const fx = cx + h / 4, fy = cy - h / 4;
   ctx.fillStyle = BLACK;
   for (let i = 0; i < 5; i++) {
     const angle = i * 72 * Math.PI / 180;
-    const px = cx + r * 0.9 * Math.cos(angle);
-    const py = cy - r * 0.9 * Math.sin(angle);
-    ctx.beginPath(); ctx.arc(px, py, r / 3, 0, Math.PI * 2); ctx.fill();
+    const px = fx + r * 0.9 * Math.cos(angle);
+    const py = fy - r * 0.9 * Math.sin(angle);
+    ctx.beginPath(); ctx.arc(px, py, r / 4, 0, Math.PI * 2); ctx.fill();
   }
-  ctx.beginPath(); ctx.arc(cx, cy, r / 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(fx, fy, r / 6, 0, Math.PI * 2); ctx.fill();
+  // 花苞
+  ctx.beginPath(); ctx.arc(cx - h / 4, cy + h / 4, 1, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx - h / 3, cy + h / 3, 1, 0, Math.PI * 2); ctx.fill();
 }
 
-function drawOrchid(x, y, s) {
+// 兰花: 三片长叶 + 小花
+function drawOrchid(cx, cy, h) {
   ctx.strokeStyle = BLACK; ctx.lineWidth = 1;
+  const bx = cx, by = cy + h / 2;
+  ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(cx - h / 2, cy - h / 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(cx, cy - h / 2 - 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(cx + h / 2, cy - h / 2); ctx.stroke();
+  // 小花
+  ctx.fillStyle = BLACK;
+  for (let i = 0; i < 5; i++) {
+    const angle = i * 72 * Math.PI / 180;
+    const px = cx + 3 * 0.9 * Math.cos(angle);
+    const py = cy - 3 * 0.9 * Math.sin(angle);
+    ctx.beginPath(); ctx.arc(px, py, 1, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// 竹子: 三节竹竿 + 竹叶
+function drawBamboo(cx, cy, h) {
+  ctx.strokeStyle = BLACK; ctx.lineWidth = 1;
+  const segH = Math.floor(h / 3);
+  const top = cy - h / 2;
   for (let i = 0; i < 3; i++) {
-    const ox = x + i * s / 3;
-    const startY = y + (i === 1 ? s / 2 : 0);
-    ctx.beginPath();
-    for (let dy = 0; dy < s; dy += 2) {
-      const dx = Math.sin(dy * 0.08) * (s / 4);
-      if (dy % 4 === 0) { ctx.moveTo(ox + dx, startY - dy); ctx.lineTo(ox + dx + 1, startY - dy); }
-      ctx.moveTo(ox - dx, startY - dy); ctx.lineTo(ox - dx + 1, startY - dy);
-    }
-    ctx.stroke();
+    const sy = top + i * segH;
+    ctx.beginPath(); ctx.moveTo(cx, sy); ctx.lineTo(cx, sy + segH); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - 2, sy + segH); ctx.lineTo(cx + 3, sy + segH); ctx.stroke();
   }
-}
-
-function drawBamboo(x, y, s) {
-  ctx.strokeStyle = BLACK; ctx.lineWidth = 1;
-  const segH = Math.floor(s / 4);
-  for (let i = 0; i < 4; i++) {
-    const sy = y - i * segH;
-    ctx.beginPath(); ctx.moveTo(x, sy - segH + 1); ctx.lineTo(x, sy + 1); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x - 2, sy); ctx.lineTo(x + 3, sy); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x - 1, sy - segH + 1); ctx.lineTo(x + 2, sy - segH + 1); ctx.stroke();
-  }
-  const leafY = y - s + 2;
+  // 竹叶
   for (let i = 0; i < 3; i++) {
-    const lx = x + (i - 1) * 4;
-    ctx.beginPath(); ctx.moveTo(lx, leafY); ctx.lineTo(lx + 4, leafY - 5); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(lx, leafY); ctx.lineTo(lx - 4, leafY - 4); ctx.stroke();
+    const sy = top + i * segH + 2;
+    ctx.beginPath(); ctx.moveTo(cx, sy); ctx.lineTo(cx - 5, sy - 5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, sy); ctx.lineTo(cx - 5, sy - 3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, sy); ctx.lineTo(cx + 5, sy - 5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, sy); ctx.lineTo(cx + 5, sy - 3); ctx.stroke();
   }
 }
 
-function drawChrysanthemum(cx, cy, r) {
+// 菊花: 多层花瓣 + 叶片
+function drawChrysanthemum(cx, cy, h) {
+  const r = h / 2 - 2;
   ctx.strokeStyle = BLACK; ctx.lineWidth = 1;
-  for (let i = 0; i < 8; i++) {
-    const angle = i * 45 * Math.PI / 180;
-    const px = cx + r * Math.cos(angle);
-    const py = cy - r * Math.sin(angle);
-    const px2 = cx + r * 1.4 * Math.cos(angle);
-    const py2 = cy - r * 1.4 * Math.sin(angle);
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px2, py2); ctx.stroke();
+  // 外层12瓣
+  for (let i = 0; i < 12; i++) {
+    const angle = i * 30 * Math.PI / 180;
+    const px1 = cx + r * 0.5 * Math.cos(angle);
+    const py1 = cy - r * 0.5 * Math.sin(angle);
+    const px2 = cx + r * Math.cos(angle);
+    const py2 = cy - r * Math.sin(angle);
+    ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.stroke();
     ctx.fillStyle = BLACK; ctx.beginPath(); ctx.arc(px2, py2, 1, 0, Math.PI * 2); ctx.fill();
   }
-  for (let i = 0; i < 6; i++) {
-    const angle = (i * 60 + 30) * Math.PI / 180;
-    const px = cx + r * 0.5 * Math.cos(angle);
-    const py = cy - r * 0.5 * Math.sin(angle);
+  // 内层8瓣
+  for (let i = 0; i < 8; i++) {
+    const angle = (i * 45 + 22.5) * Math.PI / 180;
+    const px = cx + r * 0.35 * Math.cos(angle);
+    const py = cy - r * 0.35 * Math.sin(angle);
     ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
   }
-  ctx.fillStyle = BLACK; ctx.beginPath(); ctx.arc(cx, cy, r / 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = BLACK; ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fill();
+  // 叶片
+  ctx.beginPath(); ctx.moveTo(cx, cy + r); ctx.lineTo(cx - 4, cy + r + 4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy + r); ctx.lineTo(cx + 4, cy + r + 4); ctx.stroke();
 }
 
-function drawDecorElements(x, y, w, h) {
-  const s = h - 4;
-  const spacing = w / 4;
-  drawPlumBlossom(x + spacing / 2, y + s / 2, s / 3);
-  drawOrchid(x + spacing + spacing / 2, y + s, s * 2 / 3);
-  drawBamboo(x + 2 * spacing + spacing / 2, y + s, s * 2 / 3);
-  drawChrysanthemum(x + 3 * spacing + spacing / 2, y + s / 2, s / 3);
+// 每日随机选择一种植物绘制
+function drawDailyDecor(x, y, w, h, tm) {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const s = h - 2;
+  const idx = (tm.year + tm.month + tm.day) % 4;
+  switch (idx) {
+    case 0: drawPlumBlossom(cx, cy, s); break;    // 梅
+    case 1: drawOrchid(cx, cy, s); break;         // 兰
+    case 2: drawBamboo(cx, cy, s); break;         // 竹
+    case 3: drawChrysanthemum(cx, cy, s); break;  // 菊
+  }
 }
 
 function findNextFestival(year, month, day, weekDay) {
@@ -677,7 +705,7 @@ function drawModernCalendar(data) {
   const decorY = curY + 64;
   const decorH = large ? 24 : 18;
   const decorW = w - 2 * margin;
-  drawDecorElements(margin, decorY, decorW, decorH);
+  drawDailyDecor(margin, decorY, decorW, decorH, tm);
 
   // ── 分隔线 ──
   curY = decorY + decorH + (large ? 6 : 4);
