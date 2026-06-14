@@ -93,6 +93,16 @@ canvas { border: 2px dashed #e94560; border-radius: 4px; image-rendering: pixela
   </fieldset>
 
   <fieldset>
+    <legend>模式切换</legend>
+    <div class="row" style="flex-wrap:wrap">
+      <button onclick="switchMode('calendar')" style="flex:1">1 月视图</button>
+      <button onclick="switchMode('calendar-day')" style="flex:1">2 按天</button>
+      <button onclick="switchMode('clock')" style="flex:1">3 时钟</button>
+      <button onclick="switchMode('picture')" style="flex:1">4 图片</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
     <legend>设备模拟</legend>
     <div class="row">
       <label>电压 (mV):<input type="range" min="2500" max="4200" value="3600" step="10" id="battVoltage" oninput="document.getElementById('battVal').textContent=(this.value/1000).toFixed(2)+'V';updateSim()"></label>
@@ -281,7 +291,7 @@ function getFestival(solarYear, solarMon, solarDay, lunar, weekDay) {
 const canvas = document.getElementById('screenCanvas');
 const ctx = canvas.getContext('2d');
 
-let simMode = 'calendar';
+let simCalendarMode = 'month';
 let simImage = null;
 let simDitherData = null;
 
@@ -319,9 +329,10 @@ function syncCurrentTime() {
 
 function switchMode(mode) {
   simMode = mode;
-  document.getElementById('screenMode').textContent = mode === 'calendar' ? '日历' : mode === 'clock' ? '时钟' : '图片';
+  const modeNames = { 'calendar': '日历', 'calendar-day': '日历按天', 'clock': '时钟', 'picture': '图片' };
+  document.getElementById('screenMode').textContent = modeNames[mode] || mode;
   if (mode !== 'picture') simDitherData = null;
-  addLog('切换到' + (mode === 'calendar' ? '日历' : mode === 'clock' ? '时钟' : '图片') + '模式');
+  addLog('切换到' + (modeNames[mode] || mode) + '模式');
   updateSim();
 }
 
@@ -951,6 +962,7 @@ function updateSim() {
 
   switch (simMode) {
     case 'calendar': drawCalendar(data); break;
+    case 'calendar-day': drawModernCalendar(data); break;
     case 'clock': drawClock(data); break;
     default: break;
   }
@@ -965,7 +977,7 @@ addLog('可用预设选择屏幕尺寸, 或通过右侧面板调试');
 
 // 定时刷新时钟
 setInterval(() => {
-  if (simMode === 'clock') {
+  if (simMode === 'clock' || simMode === 'calendar-day') {
     const now = new Date();
     document.getElementById('simTime').value = now.toTimeString().slice(0,5);
     updateSim();
@@ -977,8 +989,9 @@ setInterval(() => {
 document.addEventListener('keydown', e => {
   switch (e.key.toLowerCase()) {
     case '1': switchMode('calendar'); break;
-    case '2': switchMode('clock'); break;
-    case '3': switchMode('picture'); break;
+    case '2': switchMode('calendar-day'); break;
+    case '3': switchMode('clock'); break;
+    case '4': switchMode('picture'); break;
     case 'c': simClearScreen(); break;
     case 'r': simReset(); break;
   }

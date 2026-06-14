@@ -176,7 +176,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
             DeleteObject(borderPen);
 
             // Display current mode at the top of the bitmap
-            const wchar_t* modeText = (g_display_mode == MODE_CLOCK) ? L"时钟模式" : L"日历模式";
+            const wchar_t* modeText;
+            switch (g_display_mode) {
+                case MODE_CLOCK: modeText = L"时钟模式"; break;
+                case MODE_CALENDAR_DAY: modeText = L"日历按天显示"; break;
+                default: modeText = L"日历模式"; break;
+            }
             int modeTextY = drawY - 20;  // Above the bitmap
             SetTextColor(hdc, RGB(50, 50, 50));
             SetBkMode(hdc, TRANSPARENT);
@@ -244,6 +249,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) 
             if (wParam == VK_SPACE) {
                 if (g_display_mode == MODE_CLOCK)
                     g_display_mode = MODE_CALENDAR;
+                else if (g_display_mode == MODE_CALENDAR)
+                    g_display_mode = MODE_CALENDAR_DAY;
                 else
                     g_display_mode = MODE_CLOCK;
 

@@ -619,6 +619,9 @@ void DrawGUI(gui_data_t* data, buffer_callback callback, void* callback_data) {
 
         switch (data->mode) {
             case MODE_CALENDAR:
+                DrawCalendar(&gfx, &tm, &Lunar, data);
+                break;
+            case MODE_CALENDAR_DAY:
                 DrawModernCalendar(&gfx, &tm, &Lunar, data);
                 break;
             case MODE_CLOCK:
@@ -627,7 +630,7 @@ void DrawGUI(gui_data_t* data, buffer_callback callback, void* callback_data) {
             default:
                 break;
         }
-        if ((data->mode == MODE_CALENDAR || data->mode == MODE_CLOCK) &&
+        if ((data->mode == MODE_CALENDAR || data->mode == MODE_CALENDAR_DAY || data->mode == MODE_CLOCK) &&
             (tm.tm_year + YEAR0 == 2025 && tm.tm_mon + 1 == 1)) {
             DrawTimeSyncTip(&gfx, data);
         }
