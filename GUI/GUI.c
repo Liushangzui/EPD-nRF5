@@ -2,10 +2,10 @@
 
 #include <stdio.h>
 #include <time.h>
-#include <math.h>
 
 #include "Lunar.h"
 #include "fonts.h"
+#include "decor_bitmaps.h"
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 #define GFX_printf_styled(gfx, fg, bg, font, ...) \
@@ -358,102 +358,42 @@ static void DrawInfoCard(Adafruit_GFX* gfx, int16_t x, int16_t y, int16_t w, int
     GFX_printf(gfx, "%s", content);
 }
 
-// ==================== 装饰元素: 梅兰竹菊 (每日随机) ====================
+// ==================== 装饰元素: 梅兰竹菊 (每日随机, 基于图片) ====================
 
-// 梅花: 枝干 + 花朵 + 花苞
-static void DrawPlumBlossom(Adafruit_GFX* gfx, int16_t cx, int16_t cy, int16_t h) {
-    int16_t r = h / 2 - 1;
-    // 斜枝干
-    GFX_drawLine(gfx, cx - h / 2, cy + h / 2, cx + h / 4, cy - h / 4, GFX_BLACK);
-    // 主花 5瓣
-    int16_t fx = cx + h / 4, fy = cy - h / 4;
-    for (int i = 0; i < 5; i++) {
-        float angle = i * 72.0f * 3.14159f / 180.0f;
-        int16_t px = fx + (int16_t)(r * 0.9f * cosf(angle));
-        int16_t py = fy - (int16_t)(r * 0.9f * sinf(angle));
-        GFX_fillCircle(gfx, px, py, r / 4, GFX_BLACK);
-    }
-    GFX_fillCircle(gfx, fx, fy, r / 6, GFX_BLACK);
-    // 花苞
-    GFX_fillCircle(gfx, cx - h / 4, cy + h / 4, 1, GFX_BLACK);
-    GFX_fillCircle(gfx, cx - h / 3, cy + h / 3, 1, GFX_BLACK);
-}
-
-// 兰花: 三片长叶 + 小花
-static void DrawOrchid(Adafruit_GFX* gfx, int16_t cx, int16_t cy, int16_t h) {
-    int16_t bx = cx, by = cy + h / 2;
-    // 左叶
-    GFX_drawLine(gfx, bx, by, cx - h / 2, cy - h / 2, GFX_BLACK);
-    // 中叶
-    GFX_drawLine(gfx, bx, by, cx, cy - h / 2 - 2, GFX_BLACK);
-    // 右叶
-    GFX_drawLine(gfx, bx, by, cx + h / 2, cy - h / 2, GFX_BLACK);
-    // 小花
-    for (int i = 0; i < 5; i++) {
-        float angle = i * 72.0f * 3.14159f / 180.0f;
-        int16_t px = cx + (int16_t)(3 * 0.9f * cosf(angle));
-        int16_t py = cy - (int16_t)(3 * 0.9f * sinf(angle));
-        GFX_fillCircle(gfx, px, py, 1, GFX_BLACK);
+// 绘制1位单色位图 (支持缩放)
+static void DrawBitmap1bpp(Adafruit_GFX* gfx, int16_t dx, int16_t dy,
+                           int16_t dw, int16_t dh,
+                           const uint8_t* bmp, int16_t bw, int16_t bh) {
+    int16_t bpr = (bw + 7) / 8;  // bytes per row
+    for (int16_t y = 0; y < dh; y++) {
+        int16_t sy = y * bh / dh;
+        const uint8_t* row = &bmp[sy * bpr];
+        for (int16_t x = 0; x < dw; x++) {
+            int16_t sx = x * bw / dw;
+            if (row[sx / 8] & (0x80 >> (sx % 8))) {
+                GFX_drawPixel(gfx, dx + x, dy + y, GFX_BLACK);
+            }
+        }
     }
 }
 
-// 竹子: 三节竹竿 + 竹叶
-static void DrawBamboo(Adafruit_GFX* gfx, int16_t cx, int16_t cy, int16_t h) {
-    int16_t segH = h / 3;
-    int16_t top = cy - h / 2;
-    for (int i = 0; i < 3; i++) {
-        int16_t sy = top + i * segH;
-        GFX_drawFastVLine(gfx, cx, sy, segH, GFX_BLACK);
-        GFX_drawFastHLine(gfx, cx - 2, sy + segH, 5, GFX_BLACK);
-    }
-    // 竹叶
-    for (int i = 0; i < 3; i++) {
-        int16_t sy = top + i * segH + 2;
-        GFX_drawLine(gfx, cx, sy, cx - 5, sy - 5, GFX_BLACK);
-        GFX_drawLine(gfx, cx, sy, cx - 5, sy - 3, GFX_BLACK);
-        GFX_drawLine(gfx, cx, sy, cx + 5, sy - 5, GFX_BLACK);
-        GFX_drawLine(gfx, cx, sy, cx + 5, sy - 3, GFX_BLACK);
-    }
-}
-
-// 菊花: 多层花瓣 + 叶片
-static void DrawChrysanthemum(Adafruit_GFX* gfx, int16_t cx, int16_t cy, int16_t h) {
-    int16_t r = h / 2 - 2;
-    // 外层12瓣
-    for (int i = 0; i < 12; i++) {
-        float angle = i * 30.0f * 3.14159f / 180.0f;
-        int16_t px1 = cx + (int16_t)(r * 0.5f * cosf(angle));
-        int16_t py1 = cy - (int16_t)(r * 0.5f * sinf(angle));
-        int16_t px2 = cx + (int16_t)(r * cosf(angle));
-        int16_t py2 = cy - (int16_t)(r * sinf(angle));
-        GFX_drawLine(gfx, px1, py1, px2, py2, GFX_BLACK);
-        GFX_fillCircle(gfx, px2, py2, 1, GFX_BLACK);
-    }
-    // 内层8瓣
-    for (int i = 0; i < 8; i++) {
-        float angle = (i * 45.0f + 22.5f) * 3.14159f / 180.0f;
-        int16_t px = cx + (int16_t)(r * 0.35f * cosf(angle));
-        int16_t py = cy - (int16_t)(r * 0.35f * sinf(angle));
-        GFX_drawLine(gfx, cx, cy, px, py, GFX_BLACK);
-    }
-    GFX_fillCircle(gfx, cx, cy, 2, GFX_BLACK);
-    // 叶片
-    GFX_drawLine(gfx, cx, cy + r, cx - 4, cy + r + 4, GFX_BLACK);
-    GFX_drawLine(gfx, cx, cy + r, cx + 4, cy + r + 4, GFX_BLACK);
-}
-
-// 每日随机选择一种植物绘制
+// 每日随机选择一种植物图片绘制
 static void DrawDailyDecor(Adafruit_GFX* gfx, int16_t x, int16_t y, int16_t w, int16_t h, tm_t* tm) {
-    int16_t cx = x + w / 2;
-    int16_t cy = y + h / 2;
-    int16_t s = h - 2;
     int idx = (tm->tm_year + tm->tm_mon + tm->tm_mday) % 4;
+    const uint8_t* bmp;
+    int16_t bw, bh;
     switch (idx) {
-        case 0: DrawPlumBlossom(gfx, cx, cy, s); break;    // 梅
-        case 1: DrawOrchid(gfx, cx, cy, s); break;         // 兰
-        case 2: DrawBamboo(gfx, cx, cy, s); break;         // 竹
-        case 3: DrawChrysanthemum(gfx, cx, cy, s); break;  // 菊
+        case 0: bmp = bmp_mei; bw = DECOR_BMP_W; bh = DECOR_BMP_H; break;  // 梅
+        case 1: bmp = bmp_lan; bw = DECOR_BMP_W; bh = DECOR_BMP_H; break;  // 兰
+        case 2: bmp = bmp_zhu; bw = DECOR_BMP_W; bh = DECOR_BMP_H; break;  // 竹
+        case 3: bmp = bmp_ju;  bw = DECOR_BMP_W; bh = DECOR_BMP_H; break;  // 菊
     }
+    // 居中缩放绘制
+    int16_t scale = (h * bw / bh < w) ? (h * bw / bh) : w;
+    int16_t dw = scale;
+    int16_t dh = h;
+    int16_t dx = x + (w - dw) / 2;
+    DrawBitmap1bpp(gfx, dx, dy, dw, dh, bmp, bw, bh);
 }
 
 // 现代单日日历
@@ -534,7 +474,7 @@ static void DrawModernCalendar(Adafruit_GFX* gfx, tm_t* tm, struct Lunar_Date* L
 
     // ── 装饰元素: 梅兰竹菊 ──
     int16_t decorY = gfx->ty + GFX_getFontHeight(gfx) + (large ? 8 : 6);
-    int16_t decorH = large ? 24 : 18;
+    int16_t decorH = large ? 90 : 70;
     int16_t decorW = w - 2 * margin;
     DrawDailyDecor(gfx, margin, decorY, decorW, decorH, tm);
 
