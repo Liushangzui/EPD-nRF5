@@ -305,6 +305,184 @@ static void DrawCalendar(Adafruit_GFX* gfx, tm_t* tm, struct Lunar_Date* Lunar, 
     DrawMonthDays(gfx, 10, large ? 84 : 64, tm, Lunar, data);
 }
 
+// ==================== 现代日历样式 (单日视图) ====================
+
+// 计算两个日期之间的天数差
+static int32_t DaysBetween(uint16_t y1, uint8_t m1, uint8_t d1, uint16_t y2, uint8_t m2, uint8_t d2) {
+    struct devtm tm1 = {y1 - YEAR0, m1 - 1, d1, 0, 0, 0, 0};
+    struct devtm tm2 = {y2 - YEAR0, m2 - 1, d2, 0, 0, 0, 0};
+    uint32_t t1 = transformTimeStruct(&tm1);
+    uint32_t t2 = transformTimeStruct(&tm2);
+    return (int32_t)(t2 - t1) / SEC_PER_DY;
+}
+
+// 查找最近的下一个节日，返回距离天数，name 输出节日名称
+static int16_t FindNextFestival(uint16_t year, uint8_t mon, uint8_t day, uint8_t week, char* name) {
+    struct devtm tm = {year - YEAR0, mon - 1, day, 0, 0, 0, week};
+    struct Lunar_Date checkLunar;
+    char festival[10];
+
+    for (int16_t offset = 1; offset <= 365; offset++) {
+        uint32_t ts = transformTimeStruct(&tm) + offset * SEC_PER_DY;
+        struct devtm checkTm;
+        transformTime(ts, &checkTm);
+
+        LUNAR_SolarToLunar(&checkLunar, checkTm.tm_year + YEAR0, checkTm.tm_mon + 1, checkTm.tm_mday);
+
+        if (GetFestival(checkTm.tm_year + YEAR0, checkTm.tm_mon + 1, checkTm.tm_mday, checkTm.tm_wday,
+                        &checkLunar, festival)) {
+            strcpy(name, festival);
+            return offset;
+        }
+    }
+    return -1;
+}
+
+// 绘制信息卡片 (圆角矩形 + 左侧色条 + 标题 + 内容)
+static void DrawInfoCard(Adafruit_GFX* gfx, int16_t x, int16_t y, int16_t w, int16_t h, uint16_t accentColor,
+                          const char* title, const char* content) {
+    // 背景
+    GFX_fillRoundRect(gfx, x, y, w, h, 4, GFX_WHITE);
+    GFX_drawRoundRect(gfx, x, y, w, h, 4, GFX_BLACK);
+    // 左侧色条
+    GFX_fillRect(gfx, x + 1, y + 4, 3, h - 8, accentColor);
+    // 标题
+    GFX_setFont(gfx, u8g2_font_wqy9_t_lunar);
+    GFX_setTextColor(gfx, GFX_BLACK, GFX_WHITE);
+    GFX_setCursor(gfx, x + 10, y + (h - GFX_getFontHeight(gfx) * 2) / 2 + GFX_getFontAscent(gfx));
+    GFX_printf(gfx, "%s", title);
+    // 内容
+    GFX_setTextColor(gfx, accentColor, GFX_WHITE);
+    GFX_setCursor(gfx, x + 10, gfx->ty + GFX_getFontHeight(gfx) + 2);
+    GFX_printf(gfx, "%s", content);
+}
+
+// 现代单日日历
+static void DrawModernCalendar(Adafruit_GFX* gfx, tm_t* tm, struct Lunar_Date* Lunar, gui_data_t* data) {
+    bool large = large_layout(data);
+    int16_t w = data->width;
+    int16_t margin = large ? 30 : 16;
+    int16_t cx = w / 2;
+    int16_t curY;
+
+    // ── 顶部栏: 电池 + 温度 ──
+    curY = large ? 8 : 4;
+    DrawBattery(gfx, w - margin, curY, 20, data->voltage);
+
+    GFX_setFont(gfx, u8g2_font_wqy9_t_lunar);
+    GFX_setTextColor(gfx, GFX_BLACK, GFX_WHITE);
+    char ssidShort[5] = {0};
+    int16_t ssidLen = strlen(data->ssid);
+    memcpy(ssidShort, &data->ssid[ssidLen > 4 ? ssidLen - 4 : 0], 4);
+    char tempStr[16];
+    snprintf(tempStr, sizeof(tempStr), "%d℃[%s]", data->temperature, ssidShort);
+    GFX_setCursor(gfx, margin, curY + 10);
+    GFX_printf(gfx, "%s", tempStr);
+
+    // ── 分隔线 ──
+    curY = large ? 32 : 24;
+    GFX_drawFastHLine(gfx, margin, curY, w - 2 * margin, GFX_BLACK);
+
+    // ── 日期头部: 2026年6月  ──
+    curY = large ? 52 : 36;
+    GFX_setFont(gfx, large ? u8g2_font_wqy12_t_lunar : u8g2_font_wqy9_t_lunar);
+    GFX_setTextColor(gfx, GFX_BLACK, GFX_WHITE);
+    char dateHeader[32];
+    snprintf(dateHeader, sizeof(dateHeader), "%d年%d月", tm->tm_year + YEAR0, tm->tm_mon + 1);
+    int16_t dhw = GFX_getUTF8Width(gfx, dateHeader);
+    GFX_setCursor(gfx, margin, curY);
+    GFX_printf(gfx, "%s", dateHeader);
+
+    // 干支纪年
+    GFX_setTextColor(gfx, GFX_RED, GFX_WHITE);
+    GFX_setCursor(gfx, w - margin - GFX_getUTF8Width(gfx, "丙午年[马]"), curY);
+    GFX_printf(gfx, "%s%s年", Lunar_StemStrig[LUNAR_GetStem(Lunar)], Lunar_BranchStrig[LUNAR_GetBranch(Lunar)]);
+    GFX_printf(gfx, "[%s]", Lunar_ZodiacString[LUNAR_GetZodiac(Lunar)]);
+
+    // ── 星期 ──
+    curY = large ? 72 : 52;
+    GFX_setFont(gfx, large ? u8g2_font_wqy12_t_lunar : u8g2_font_wqy9_t_lunar);
+    GFX_setTextColor(gfx, GFX_BLACK, GFX_WHITE);
+    char weekStr[16];
+    snprintf(weekStr, sizeof(weekStr), "星期%s", Lunar_DayString[tm->tm_wday]);
+    GFX_setCursor(gfx, margin, curY);
+    GFX_printf(gfx, "%s", weekStr);
+
+    // 周数
+    GFX_setTextColor(gfx, GFX_RED, GFX_WHITE);
+    GFX_setCursor(gfx, w - margin - GFX_getUTF8Width(gfx, "第52周"), curY);
+    GFX_printf(gfx, "第%d周", GetWeekOfYear(tm->tm_year, tm->tm_mon, tm->tm_mday, tm->tm_wday));
+
+    // ── 大号日期数字 ──
+    curY = large ? 110 : 85;
+    char dayStr[4];
+    snprintf(dayStr, sizeof(dayStr), "%d", tm->tm_mday);
+    GFX_setFont(gfx, large ? u8g2_font_helvB18_tn : u8g2_font_helvB18_tn);
+    GFX_setTextColor(gfx, GFX_BLACK, GFX_WHITE);
+    int16_t dayW = GFX_getUTF8Width(gfx, dayStr);
+    GFX_setCursor(gfx, cx - dayW / 2, curY);
+    GFX_printf(gfx, "%s", dayStr);
+
+    // 农历日期
+    GFX_setFont(gfx, large ? u8g2_font_wqy12_t_lunar : u8g2_font_wqy9_t_lunar);
+    GFX_setTextColor(gfx, GFX_RED, GFX_WHITE);
+    char lunarStr[20];
+    snprintf(lunarStr, sizeof(lunarStr), "%s%s%s", Lunar_MonthLeapString[Lunar->IsLeap],
+             Lunar_MonthString[Lunar->Month], Lunar_DateString[Lunar->Date]);
+    int16_t lw = GFX_getUTF8Width(gfx, lunarStr);
+    GFX_setCursor(gfx, cx - lw / 2, gfx->ty + GFX_getFontHeight(gfx) + (large ? 6 : 4));
+    GFX_printf(gfx, "%s", lunarStr);
+
+    // ── 分隔线 ──
+    curY = large ? 160 : 128;
+    GFX_drawFastHLine(gfx, margin, curY, w - 2 * margin, GFX_BLACK);
+
+    // ── 节气卡片 ──
+    curY = large ? 172 : 138;
+    int16_t cardW = w - 2 * margin;
+    int16_t cardH = large ? 56 : 44;
+    int16_t cardSpacing = large ? 8 : 5;
+
+    uint8_t jqDay = 0;
+    uint8_t jqIdx = GetJieQiStr(tm->tm_year + YEAR0, tm->tm_mon + 1, tm->tm_mday, &jqDay);
+    char jqTitle[32];
+    char jqContent[32];
+    if (jqDay == 0) {
+        snprintf(jqTitle, sizeof(jqTitle), "%s", JieQiStr[jqIdx % 24]);
+        snprintf(jqContent, sizeof(jqContent), "今日节气");
+    } else {
+        snprintf(jqTitle, sizeof(jqTitle), "%s", JieQiStr[jqIdx % 24]);
+        snprintf(jqContent, sizeof(jqContent), "还有 %d 天", jqDay);
+    }
+    DrawInfoCard(gfx, margin, curY, cardW, cardH, GFX_RED, jqTitle, jqContent);
+
+    // ── 节日倒计时卡片 ──
+    curY += cardH + cardSpacing;
+    char festivalName[10];
+    int16_t festivalDays = FindNextFestival(tm->tm_year + YEAR0, tm->tm_mon + 1, tm->tm_mday, tm->tm_wday,
+                                             festivalName);
+    char festTitle[32];
+    char festContent[32];
+    if (festivalDays > 0) {
+        snprintf(festTitle, sizeof(festTitle), "%s", festivalName);
+        snprintf(festContent, sizeof(festContent), "还有 %d 天", festivalDays);
+    } else {
+        snprintf(festTitle, sizeof(festTitle), "节日");
+        snprintf(festContent, sizeof(festContent), "暂无");
+    }
+    DrawInfoCard(gfx, margin, curY, cardW, cardH, GFX_BLACK, festTitle, festContent);
+
+    // ── 底部: 调休标记 ──
+    curY += cardH + cardSpacing;
+    GFX_setFont(gfx, u8g2_font_wqy9_t_lunar);
+    bool work = false;
+    if (tm->tm_year + YEAR0 == HOLIDAY_YEAR && GetHoliday(tm->tm_mon + 1, tm->tm_mday, &work)) {
+        GFX_setTextColor(gfx, work ? GFX_BLACK : GFX_RED, GFX_WHITE);
+        GFX_setCursor(gfx, margin, curY);
+        GFX_printf(gfx, "今天%s", work ? "调班" : "放假");
+    }
+}
+
 // clang-format off
 /* Routine to Draw Large 7-Segment formated number
    Contributed by William Zaggle.
@@ -441,7 +619,7 @@ void DrawGUI(gui_data_t* data, buffer_callback callback, void* callback_data) {
 
         switch (data->mode) {
             case MODE_CALENDAR:
-                DrawCalendar(&gfx, &tm, &Lunar, data);
+                DrawModernCalendar(&gfx, &tm, &Lunar, data);
                 break;
             case MODE_CLOCK:
                 DrawClock(&gfx, &tm, &Lunar, data);

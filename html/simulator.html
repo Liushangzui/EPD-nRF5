@@ -494,11 +494,169 @@ function drawMonthDays(x, y, tm, lunarBase, data) {
   ctx.textAlign = 'start';
 }
 
-function drawCalendar(data) {
+// ==================== 现代单日日历渲染 ====================
+
+function findNextFestival(year, month, day, weekDay) {
+  const lunar = LunarCalendar.solarToLunar(year, month, day);
+  // 搜索未来365天
+  for (let offset = 1; offset <= 365; offset++) {
+    const d = new Date(year, month - 1, day + offset);
+    const y = d.getFullYear(), m = d.getMonth() + 1, dd = d.getDate();
+    const w = d.getDay();
+    const l = LunarCalendar.solarToLunar(y, m, dd);
+    const fest = getFestival(y, m, dd, l, w);
+    if (fest) return { name: fest, days: offset };
+  }
+  return null;
+}
+
+function drawInfoCard(x, y, w, h, accentColor, title, content) {
+  // 背景
+  ctx.fillStyle = WHITE;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 4); ctx.fill();
+  ctx.strokeStyle = BLACK; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 4); ctx.stroke();
+  // 左侧色条
+  ctx.fillStyle = accentColor;
+  ctx.fillRect(x + 1, y + 4, 3, h - 8);
+  // 标题
+  ctx.fillStyle = BLACK;
+  ctx.font = '9px "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'start';
+  ctx.fillText(title, x + 10, y + h / 2 - 2);
+  // 内容
+  ctx.fillStyle = accentColor;
+  ctx.fillText(content, x + 10, y + h / 2 + 12);
+}
+
+function drawModernCalendar(data) {
   const large = isLarge();
-  drawDateHeader(data.tm, data.lunar, data);
-  drawWeekHeader(10, large ? 42 : 30, data);
-  drawMonthDays(10, large ? 82 : 60, data.tm, data.lunar, data);
+  const w = data.width, h = data.height;
+  const margin = large ? 30 : 16;
+  const cx = w / 2;
+  const tm = data.tm, lunar = data.lunar;
+  let curY;
+
+  // ── 顶部栏: 电池 + 温度 ──
+  curY = large ? 8 : 4;
+  drawBattery(w - margin, curY, 20, data.voltage);
+
+  ctx.fillStyle = BLACK;
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'start';
+  ctx.fillText(data.temp + '℃[' + data.ssid.slice(-4) + ']', margin, curY + 10);
+
+  // ── 分隔线 ──
+  curY = large ? 32 : 24;
+  ctx.strokeStyle = BLACK; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(margin, curY); ctx.lineTo(w - margin, curY); ctx.stroke();
+
+  // ── 日期头部 ──
+  curY = large ? 52 : 36;
+  ctx.font = (large ? '12px' : '9px') + ' "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = BLACK;
+  ctx.textAlign = 'start';
+  ctx.fillText(tm.year + '年' + tm.month + '月', margin, curY);
+
+  // 干支
+  const sb = LunarCalendar.getStemBranch(lunar.year);
+  ctx.fillStyle = RED;
+  ctx.textAlign = 'right';
+  ctx.fillText(sb.stem + sb.branch + '年[' + sb.animal + ']', w - margin, curY);
+
+  // ── 星期 ──
+  curY = large ? 72 : 52;
+  ctx.font = (large ? '12px' : '9px') + ' "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = BLACK;
+  ctx.textAlign = 'start';
+  const weekDay = new Date(tm.year, tm.month - 1, tm.day).getDay();
+  ctx.fillText('星期' + LunarCalendar.weekStr[weekDay], margin, curY);
+
+  ctx.fillStyle = RED;
+  ctx.textAlign = 'right';
+  ctx.fillText('第' + getWeekOfYear(tm) + '周', w - margin, curY);
+
+  // ── 大号日期数字 ──
+  curY = large ? 110 : 80;
+  ctx.font = 'bold 48px sans-serif';
+  ctx.fillStyle = BLACK;
+  ctx.textAlign = 'center';
+  ctx.fillText(tm.day, cx, curY + 36);
+
+  // 农历
+  ctx.font = (large ? '14px' : '12px') + ' "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = RED;
+  const lunarStr = (lunar.isLeap ? '闰' : '') + lunar.monthStr + lunar.dayStr;
+  ctx.fillText(lunarStr, cx, curY + 56);
+
+  // ── 分隔线 ──
+  curY = large ? 170 : 138;
+  ctx.strokeStyle = BLACK;
+  ctx.beginPath(); ctx.moveTo(margin, curY); ctx.lineTo(w - margin, curY); ctx.stroke();
+
+  // ── 节气卡片 ──
+  curY = large ? 182 : 148;
+  const cardW = w - 2 * margin;
+  const cardH = large ? 56 : 44;
+  const cardSpacing = large ? 8 : 5;
+
+  const jq = LunarCalendar.getJieQi(tm.year, tm.month, tm.day);
+  let jqTitle, jqContent;
+  if (jq) {
+    jqTitle = jq;
+    jqContent = '今日节气';
+  } else {
+    // 查找下一个节气 (简化：按顺序检查)
+    const jqNames = ['小寒','大寒','立春','雨水','惊蛰','春分','清明','谷雨','立夏','小满','芒种','夏至',
+      '小暑','大暑','立秋','处暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至'];
+    const jqDays2025 = [5,20,3,18,5,20,4,20,5,21,5,21,7,22,7,23,7,23,8,23,7,22,7,21];
+    const jqDays2026 = [5,20,4,18,5,20,5,20,5,21,5,21,7,23,7,23,7,23,8,23,7,22,7,21];
+    const jqd = tm.year === 2025 ? jqDays2025 : tm.year === 2026 ? jqDays2026 : jqDays2025;
+    let found = false;
+    for (let i = 0; i < 24; i++) {
+      const jqM = Math.floor(i / 2) + 1;
+      const jqD = jqd[i];
+      const jqDate = new Date(tm.year, jqM - 1, jqD);
+      const today = new Date(tm.year, tm.month - 1, tm.day);
+      if (jqDate >= today) {
+        const diff = Math.ceil((jqDate - today) / 86400000);
+        jqTitle = jqNames[i];
+        jqContent = diff === 0 ? '今日节气' : '还有 ' + diff + ' 天';
+        found = true;
+        break;
+      }
+    }
+    if (!found) { jqTitle = jqNames[0]; jqContent = '来年'; }
+  }
+  drawInfoCard(margin, curY, cardW, cardH, RED, jqTitle, jqContent);
+
+  // ── 节日倒计时卡片 ──
+  curY += cardH + cardSpacing;
+  const nextFest = findNextFestival(tm.year, tm.month, tm.day, weekDay);
+  let festTitle, festContent;
+  if (nextFest) {
+    festTitle = nextFest.name;
+    festContent = '还有 ' + nextFest.days + ' 天';
+  } else {
+    festTitle = '节日';
+    festContent = '暂无';
+  }
+  drawInfoCard(margin, curY, cardW, cardH, BLACK, festTitle, festContent);
+
+  // ── 底部: 调休标记 ──
+  curY += cardH + cardSpacing;
+  ctx.font = '9px "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'start';
+  const key = tm.month + '-' + tm.day;
+  if (tm.year === 2026 && holidays2026.has(key)) {
+    const isWork = workdays2026.has(key);
+    ctx.fillStyle = isWork ? BLACK : RED;
+    ctx.fillText('今天' + (isWork ? '调班' : '放假'), margin, curY);
+  }
+}
+
+function drawCalendar(data) {
+  drawModernCalendar(data);
 }
 
 // 7段数码管绘制
