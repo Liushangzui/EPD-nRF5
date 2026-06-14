@@ -438,28 +438,31 @@ static void DrawModernCalendar(Adafruit_GFX* gfx, tm_t* tm, struct Lunar_Date* L
     GFX_printf(gfx, "%s%s年", Lunar_StemStrig[LUNAR_GetStem(Lunar)], Lunar_BranchStrig[LUNAR_GetBranch(Lunar)]);
     GFX_printf(gfx, "[%s]", Lunar_ZodiacString[LUNAR_GetZodiac(Lunar)]);
 
-    // ── 星期 ──
-    curY = large ? 72 : 52;
+    // ── 左右布局: 左侧日期 + 右侧装饰图片 ──
+    int16_t leftRightY = large ? 76 : 56;
+    int16_t leftRightH = large ? 180 : 140;
+    int16_t leftW = w * 9 / 20;  // 左侧45%放日期
+    int16_t rightX = margin + leftW;
+    int16_t rightW = w - rightX - margin;
+
+    // --- 左侧: 日期信息 ---
+    // 星期
     GFX_setFont(gfx, large ? u8g2_font_wqy12_t_lunar : u8g2_font_wqy9_t_lunar);
     GFX_setTextColor(gfx, GFX_BLACK, GFX_WHITE);
     char weekStr[16];
     snprintf(weekStr, sizeof(weekStr), "星期%s", Lunar_DayString[tm->tm_wday]);
-    GFX_setCursor(gfx, margin, curY);
+    int16_t weekW = GFX_getUTF8Width(gfx, weekStr);
+    GFX_setCursor(gfx, margin + (leftW - weekW) / 2, leftRightY + 2);
     GFX_printf(gfx, "%s", weekStr);
 
-    // 周数
-    GFX_setTextColor(gfx, GFX_RED, GFX_WHITE);
-    GFX_setCursor(gfx, w - margin - GFX_getUTF8Width(gfx, "第52周"), curY);
-    GFX_printf(gfx, "第%d周", GetWeekOfYear(tm->tm_year, tm->tm_mon, tm->tm_mday, tm->tm_wday));
-
-    // ── 大号日期数字 ──
-    curY = large ? 110 : 85;
+    // 大号日期数字
+    int16_t dayY = leftRightY + (large ? 24 : 18);
     char dayStr[4];
     snprintf(dayStr, sizeof(dayStr), "%d", tm->tm_mday);
-    GFX_setFont(gfx, large ? u8g2_font_helvB18_tn : u8g2_font_helvB18_tn);
+    GFX_setFont(gfx, large ? u8g2_font_helvB24_tn : u8g2_font_helvB18_tn);
     GFX_setTextColor(gfx, GFX_BLACK, GFX_WHITE);
     int16_t dayW = GFX_getUTF8Width(gfx, dayStr);
-    GFX_setCursor(gfx, cx - dayW / 2, curY);
+    GFX_setCursor(gfx, margin + (leftW - dayW) / 2, dayY);
     GFX_printf(gfx, "%s", dayStr);
 
     // 农历日期
@@ -469,17 +472,23 @@ static void DrawModernCalendar(Adafruit_GFX* gfx, tm_t* tm, struct Lunar_Date* L
     snprintf(lunarStr, sizeof(lunarStr), "%s%s%s", Lunar_MonthLeapString[Lunar->IsLeap],
              Lunar_MonthString[Lunar->Month], Lunar_DateString[Lunar->Date]);
     int16_t lw = GFX_getUTF8Width(gfx, lunarStr);
-    GFX_setCursor(gfx, cx - lw / 2, gfx->ty + GFX_getFontHeight(gfx) + (large ? 6 : 4));
+    GFX_setCursor(gfx, margin + (leftW - lw) / 2, gfx->ty + GFX_getFontHeight(gfx) + (large ? 8 : 6));
     GFX_printf(gfx, "%s", lunarStr);
 
-    // ── 装饰元素: 梅兰竹菊 ──
-    int16_t decorY = gfx->ty + GFX_getFontHeight(gfx) + (large ? 8 : 6);
-    int16_t decorH = large ? 90 : 70;
-    int16_t decorW = w - 2 * margin;
-    DrawDailyDecor(gfx, margin, decorY, decorW, decorH, tm);
+    // 周数
+    GFX_setTextColor(gfx, GFX_RED, GFX_WHITE);
+    char weekNumStr[16];
+    snprintf(weekNumStr, sizeof(weekNumStr), "第%d周", GetWeekOfYear(tm->tm_year, tm->tm_mon, tm->tm_mday, tm->tm_wday));
+    int16_t wnw = GFX_getUTF8Width(gfx, weekNumStr);
+    int16_t weekNumY = gfx->ty + GFX_getFontHeight(gfx) + (large ? 10 : 8);
+    GFX_setCursor(gfx, margin + (leftW - wnw) / 2, weekNumY);
+    GFX_printf(gfx, "%s", weekNumStr);
+
+    // --- 右侧: 装饰图片 ---
+    DrawDailyDecor(gfx, rightX, leftRightY, rightW, leftRightH, tm);
 
     // ── 分隔线 ──
-    curY = decorY + decorH + (large ? 6 : 4);
+    curY = leftRightY + leftRightH + (large ? 6 : 4);
     GFX_drawFastHLine(gfx, margin, curY, w - 2 * margin, GFX_BLACK);
 
     // ── 节气卡片 ──
