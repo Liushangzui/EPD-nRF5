@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>墨水屏模拟调试工具</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #1a1a2e; color: #eee; display: flex; height: 100vh; overflow: hidden; }
+.panel { padding: 12px; overflow-y: auto; }
+.panel-left { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; background: #16213e; border-right: 1px solid #0f3460; }
+.panel-right { flex: 1; min-width: 340px; max-width: 460px; background: #1a1a2e; }
+h2 { font-size: 16px; color: #e94560; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 6px; }
+fieldset { border: 1px solid #333; border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+legend { color: #e94560; font-size: 13px; padding: 0 6px; }
+label { font-size: 12px; color: #aaa; display: block; margin: 4px 0 2px; }
+select, input, button { width: 100%; padding: 6px 8px; border-radius: 4px; border: 1px solid #444; background: #0f3460; color: #eee; font-size: 12px; margin: 2px 0; }
+button { cursor: pointer; background: #e94560; border-color: #e94560; font-weight: bold; transition: opacity 0.2s; }
+button:hover { opacity: 0.85; }
+button.secondary { background: #333; border-color: #555; }
+.row { display: flex; gap: 6px; }
+.row > * { flex: 1; }
+.col-2 { flex: 2; }
+canvas { border: 2px dashed #e94560; border-radius: 4px; image-rendering: pixelated; background: #fff; }
+.screen-info { font-size: 11px; color: #888; margin: 4px 0 10px; text-align: center; }
+.log-box { background: #0a0a1a; border: 1px solid #333; border-radius: 4px; height: 150px; overflow-y: auto; padding: 6px; font-family: 'Consolas', monospace; font-size: 11px; color: #0f0; white-space: pre-wrap; }
+.log-entry { border-bottom: 1px solid #1a1a2e; padding: 2px 0; }
+.log-up { color: #4af; }
+.log-down { color: #f4a; }
+.status-bar { font-size: 11px; color: #888; padding: 4px 0; display: flex; justify-content: space-between; }
+#screenCanvas { cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div class="panel panel-left">
+  <h2>模拟屏幕</h2>
+  <canvas id="screenCanvas" width="400" height="300"></canvas>
+  <div class="screen-info">尺寸: <span id="screenSize">400x300</span> | 模式: <span id="screenMode">日历</span> | 颜色: <span id="screenColor">三色</span></div>
+</div>
+
+<div class="panel panel-right">
+  <fieldset>
+    <legend>屏幕配置</legend>
+    <div class="row">
+      <select id="epdPreset" onchange="applyPreset()">
+        <option value="4.2_400_300_bwr">4.2寸 三色 (400x300)</option>
+        <option value="4.2_400_300_bw" selected>4.2寸 黑白 (400x300)</option>
+        <option value="7.5_800_480_bwr">7.5寸 三色 (800x480)</option>
+        <option value="7.5_800_480_bw">7.5寸 黑白 (800x480)</option>
+        <option value="5.83_648_480_4c">5.83寸 四色 (648x480)</option>
+        <option value="7.5_640_384_bw">7.5寸低分 黑白 (640x384)</option>
+        <option value="2.9_128_296_bw">2.9寸 黑白 (128x296)</option>
+      </select>
+    </div>
+    <div class="row">
+      <select id="epdDriver">
+        <option value="UC8176">UC8176</option>
+        <option value="SSD1619">SSD1619</option>
+        <option value="UC8179">UC8179</option>
+        <option value="JD79665">JD79665</option>
+      </select>
+      <select id="colorMode" onchange="updateSim()">
+        <option value="1">黑白</option>
+        <option value="2" selected>三色</option>
+        <option value="3">四色</option>
+      </select>
+    </div>
+    <label>引脚映射 (CS,DC,RST,BUSY)</label>
+    <input id="pinMap" value="5,6,7,8" onchange="addLog('引脚已更新: '+this.value)">
+  </fieldset>
+
+  <fieldset>
+    <legend>时间与模式</legend>
+    <div class="row">
+      <button onclick="syncCurrentTime()">同步当前时间</button>
+      <button class="secondary" onclick="switchMode('calendar')">日历模式</button>
+    </div>
+    <div class="row">
+      <button class="secondary" onclick="switchMode('clock')">时钟模式</button>
+      <button class="secondary" onclick="switchMode('picture')">图片模式</button>
+    </div>
+    <div class="row">
+      <label>星期起始: <select id="weekStart" onchange="updateSim()">
+        <option value="0">周日</option>
+        <option value="1" selected>周一</option>
+      </select></label>
+    </div>
+    <div class="row">
+      <label>日期:<input type="date" id="simDate" onchange="updateSim()"></label>
+      <label>时间:<input type="time" id="simTime" onchange="updateSim()"></label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>设备模拟</legend>
+    <div class="row">
+      <label>电压 (mV):<input type="range" min="2500" max="4200" value="3600" step="10" id="battVoltage" oninput="document.getElementById('battVal').textContent=(this.value/1000).toFixed(2)+'V';updateSim()"></label>
+      <span id="battVal" style="font-size:11px;color:#aaa;line-height:2.5">3.60V</span>
+    </div>
+    <div class="row">
+      <label>温度 (℃):<input type="range" min="-20" max="50" value="25" id="temperature" oninput="document.getElementById('tempVal').textContent=this.value+'℃';updateSim()"></label>
+      <span id="tempVal" style="font-size:11px;color:#aaa;line-height:2.5">25℃</span>
+    </div>
+    <label>WiFi SSID:</label>
+    <input id="ssid" value="EPD-0001" onchange="updateSim()">
+  </fieldset>
+
+  <fieldset>
+    <legend>图片模式</legend>
+    <input type="file" id="imageFile" accept=".png,.jpg,.bmp,.webp,.jpeg" onchange="loadImage()">
+    <div class="row" style="margin-top:4px">
+      <select id="ditherAlg" onchange="applyImageDither()">
+        <option value="floyd">Floyd-Steinberg</option>
+        <option value="atkinson">Atkinson</option>
+        <option value="bayer">Bayer</option>
+        <option value="stucki">Stucki</option>
+        <option value="none">无抖动</option>
+      </select>
+      <select id="imgColorMode" onchange="applyImageDither()">
+        <option value="bw">黑白</option>
+        <option value="bwr">三色</option>
+        <option value="4c">四色</option>
+      </select>
+    </div>
+    <button class="secondary" onclick="clearPicture()">清除图片</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>调试命令</legend>
+    <div class="row">
+      <input id="cmdInput" placeholder="输入十六进制命令, 如: 9000" style="flex:2">
+      <button onclick="sendDebugCmd()" style="flex:1">发送</button>
+    </div>
+    <div style="margin-top:6px">
+      <button class="secondary" onclick="simClearScreen()">模拟清屏</button>
+      <button class="secondary" onclick="simSleep()">模拟休眠</button>
+      <button class="secondary" onclick="simWake()">模拟唤醒</button>
+      <button class="secondary" onclick="simReset()">模拟复位</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>日志 <button class="secondary" style="width:auto;float:right;padding:2px 8px" onclick="document.getElementById('logBox').innerHTML=''">清空</button></legend>
+    <div class="log-box" id="logBox"></div>
+  </fieldset>
+
+  <div class="status-bar">
+    <span id="debugStatus">就绪</span>
+    <span id="debugTime"></span>
+  </div>
+</div>
+
+<script>
+// ==================== 农历计算 (精简版) ====================
+const LunarCalendar = {
+  lunarInfo: [0x04bd8,0x04ae0,0x0a570,0x054d5,0x0d260,0x0d950,0x16554,0x056a0,0x09ad0,0x055d2,
+    0x04ae0,0x0a5b6,0x0a4d0,0x0d250,0x1d255,0x0b540,0x0d6a0,0x0ada2,0x095b0,0x14977,
+    0x04970,0x0a4b0,0x0b4b5,0x06a50,0x06d40,0x1ab54,0x02b60,0x09570,0x052f2,0x04970,
+    0x06566,0x0d4a0,0x0ea50,0x16a95,0x05ad0,0x02b60,0x186e3,0x092e0,0x1c8d7,0x0c950,
+    0x0d4a0,0x1d8a6,0x0b550,0x056a0,0x1a5b4,0x025d0,0x092d0,0x0d2b2,0x0a950,0x0b557,
+    0x06ca0,0x0b550,0x15355,0x04da0,0x0a5b0,0x14573,0x052b0,0x0a9a8,0x0e950,0x06aa0,
+    0x0aea6,0x0ab50,0x04b60,0x0aae4,0x0a570,0x05260,0x0f263,0x0d950,0x05b57,0x056a0,
+    0x096d0,0x04dd5,0x04ad0,0x0a4d0,0x0d4d4,0x0d250,0x0d558,0x0b540,0x0b6a0,0x195a6,
+    0x095b0,0x049b0,0x0a974,0x0a4b0,0x0b27a,0x06a50,0x06d40,0x0af46,0x0ab60,0x09570,
+    0x04af5,0x04970,0x064b0,0x074a3,0x0ea50,0x06b58,0x05ac0,0x0ab60,0x096d5,0x092e0,
+    0x0c960,0x0d954,0x0d4a0,0x0da50,0x07552,0x056a0,0x0abb7,0x025d0,0x092d0,0x0cab5,
+    0x0a950,0x0b4a0,0x0baa4,0x0ad50,0x055d9,0x04ba0,0x0a5b0,0x15176,0x052b0,0x0a930,
+    0x07954,0x06aa0,0x0ad50,0x05b52,0x04b60,0x0a6e6,0x0a4e0,0x0d260,0x0ea65,0x0d530,
+    0x05aa0,0x076a3,0x096d0,0x04afb,0x04ad0,0x0a4d0,0x1d0b6,0x0d250,0x0d520,0x0dd45,
+    0x0b5a0,0x056d0,0x055b2,0x049b0,0x0a577,0x0a4b0,0x0aa50,0x1b255,0x06d20,0x0ada0,
+    0x14b63],
+
+  Gan: ['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'],
+  Zhi: ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'],
+  Animals: ['鼠','牛','虎','兔','龙','蛇','马','羊','猴','鸡','狗','猪'],
+  monthStr: ['','正月','二月','三月','四月','五月','六月','七月','八月','九月','十月','冬月','腊月'],
+  dayStr: ['','初一','初二','初三','初四','初五','初六','初七','初八','初九','初十',
+    '十一','十二','十三','十四','十五','十六','十七','十八','十九','二十',
+    '廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','三十'],
+  weekStr: ['日','一','二','三','四','五','六'],
+
+  lYearDays(y) {
+    let sum = 348;
+    for (let i = 0x8000; i > 0x8; i >>= 1) sum += (this.lunarInfo[y - 1900] & i) ? 1 : 0;
+    return sum + this.leapDays(y);
+  },
+  leapMonth(y) { return this.lunarInfo[y - 1900] & 0xf; },
+  leapDays(y) { return this.leapMonth(y) ? ((this.lunarInfo[y - 1900] & 0x10000) ? 30 : 29) : 0; },
+  monthDays(y, m) { return (this.lunarInfo[y - 1900] & (0x10000 >> m)) ? 30 : 29; },
+
+  solarToLunar(y, m, d) {
+    if (y < 1900 || y > 2100) return { year: y, month: m, day: d, isLeap: false };
+    let baseDate = new Date(1900, 0, 31);
+    let offset = Math.floor((new Date(y, m - 1, d) - baseDate) / 86400000);
+    let lunarYear, temp = 0;
+    for (lunarYear = 1900; lunarYear < 2100 && offset > 0; lunarYear++) {
+      temp = this.lYearDays(lunarYear);
+      offset -= temp;
+    }
+    if (offset < 0) { offset += temp; lunarYear--; }
+    let leap = this.leapMonth(lunarYear), isLeap = false;
+    let lunarMonth;
+    for (lunarMonth = 1; lunarMonth < 13 && offset > 0; lunarMonth++) {
+      if (leap > 0 && lunarMonth === (leap + 1) && !isLeap) { --lunarMonth; isLeap = true; temp = this.leapDays(lunarYear); }
+      else { temp = this.monthDays(lunarYear, lunarMonth); }
+      if (isLeap && lunarMonth === (leap + 1)) isLeap = false;
+      offset -= temp;
+    }
+    if (offset === 0 && leap === lunarMonth) {
+      if (isLeap) isLeap = false;
+      else { isLeap = true; --lunarMonth; }
+    }
+    if (offset < 0) { offset += temp; --lunarMonth; }
+    return {
+      year: lunarYear, month: lunarMonth, day: offset + 1, isLeap: isLeap,
+      monthStr: this.monthStr[lunarMonth], dayStr: this.dayStr[offset + 1],
+    };
+  },
+
+  getStemBranch(y) {
+    let stem = this.Gan[(y - 4) % 10];
+    let branch = this.Zhi[(y - 4) % 12];
+    return { stem, branch, animal: this.Animals[(y - 4) % 12], full: stem + branch };
+  },
+
+  // 节气简化查询
+  getJieQi(year, month, day) {
+    // 2025-2026 简化节气表 (近似日期)
+    const jqNames = ['小寒','大寒','立春','雨水','惊蛰','春分','清明','谷雨','立夏','小满','芒种','夏至',
+      '小暑','大暑','立秋','处暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至'];
+    const jqDays2025 = [5,20,3,18,5,20,4,20,5,21,5,21,7,22,7,23,7,23,8,23,7,22,7,21];
+    const jqDays2026 = [5,20,4,18,5,20,5,20,5,21,5,21,7,23,7,23,7,23,8,23,7,22,7,21];
+    const days = year === 2025 ? jqDays2025 : year === 2026 ? jqDays2026 : jqDays2025;
+    const idx = (month - 1) * 2 + (day >= 16 ? 1 : 0);
+    if (idx < 24 && days[idx] === day) return jqNames[idx];
+    return null;
+  }
+};
+
+// ==================== 节日与假期数据 ====================
+const festivals = [
+  [1,1,'元旦节'],[2,14,'情人节'],[3,8,'妇女节'],[3,12,'植树节'],[4,1,'愚人节'],
+  [5,1,'劳动节'],[5,4,'青年节'],[6,1,'儿童节'],[7,1,'建党节'],[8,1,'建军节'],
+  [9,10,'教师节'],[10,1,'国庆节'],[11,1,'万圣节'],[12,24,'平安夜'],[12,25,'圣诞节'],
+];
+const festivalsLunar = [
+  [1,1,'春节'],[1,15,'元宵节'],[2,2,'龙抬头'],[5,5,'端午节'],[7,7,'七夕节'],
+  [7,15,'中元节'],[8,15,'中秋节'],[9,9,'重阳节'],[10,1,'寒衣节'],[12,8,'腊八节'],[12,30,'除夕'],
+];
+
+// 调休数据
+const holidays2026 = new Set(['1-1','1-2','1-3','2-14','2-15','2-16','2-17','4-4','4-5','4-6',
+  '5-1','5-2','5-3','5-4','5-5','6-13','6-14','6-15','10-1','10-2','10-3','10-4','10-5','10-6','10-7']);
+const workdays2026 = new Set(['1-4','2-8','2-28','5-9','9-20','9-27','10-10']);
+
+function getFestival(solarYear, solarMon, solarDay, lunar, weekDay) {
+  // 农历节日
+  for (let f of festivalsLunar) {
+    if (lunar.month === f[0] && lunar.day === f[1]) return f[2];
+    if (lunar.month === 12 && lunar.day === 29) { // 除夕检查
+      let next = LunarCalendar.solarToLunar(solarYear, solarMon, solarDay + 1 > 31 ? solarMon + 1 : solarMon, solarDay + 1 > 31 ? 1 : solarDay + 1);
+      if (next.month === 1 && next.day === 1) return '除夕';
+    }
+  }
+  // 特殊节日
+  if (solarMon === 5 && weekDay === 0 && solarDay >= 8 && solarDay <= 14) return '母亲节';
+  if (solarMon === 6 && weekDay === 0 && solarDay >= 15 && solarDay <= 21) return '父亲节';
+  if (solarMon === 11 && weekDay === 4 && solarDay >= 22 && solarDay <= 28) return '感恩节';
+  // 公历节日
+  for (let f of festivals) {
+    if (solarMon === f[0] && solarDay === f[1]) return f[2];
+  }
+  // 节气
+  let jq = LunarCalendar.getJieQi(solarYear, solarMon, solarDay);
+  if (jq) return jq;
+  return null;
+}
+
+// ==================== 主程序 ====================
+const canvas = document.getElementById('screenCanvas');
+const ctx = canvas.getContext('2d');
+
+let simMode = 'calendar';
+let simImage = null;
+let simDitherData = null;
+
+function addLog(msg, dir) {
+  const box = document.getElementById('logBox');
+  const time = new Date().toLocaleTimeString();
+  const cls = dir === 'up' ? 'log-up' : dir === 'down' ? 'log-down' : '';
+  box.innerHTML = `<div class="log-entry${cls?' '+cls:''}">[${time}] ${msg}</div>` + box.innerHTML;
+  if (box.children.length > 50) box.lastChild.remove();
+}
+
+function applyPreset() {
+  const v = document.getElementById('epdPreset').value;
+  const parts = v.split('_');
+  const w = parseInt(parts[1]), h = parseInt(parts[2]);
+  let color = '2';
+  if (parts[3] === 'bw') color = '1';
+  else if (parts[3] === '4c') color = '3';
+  document.getElementById('colorMode').value = color;
+  canvas.width = w;
+  canvas.height = h;
+  document.getElementById('screenSize').textContent = w + 'x' + h;
+  document.getElementById('screenColor').textContent = color === '1' ? '黑白' : color === '2' ? '三色' : '四色';
+  addLog('预设已加载: ' + v);
+  updateSim();
+}
+
+function syncCurrentTime() {
+  const now = new Date();
+  document.getElementById('simDate').value = now.toISOString().slice(0, 10);
+  document.getElementById('simTime').value = now.toTimeString().slice(0, 5);
+  addLog('时间已同步为当前时间');
+  updateSim();
+}
+
+function switchMode(mode) {
+  simMode = mode;
+  document.getElementById('screenMode').textContent = mode === 'calendar' ? '日历' : mode === 'clock' ? '时钟' : '图片';
+  if (mode !== 'picture') simDitherData = null;
+  addLog('切换到' + (mode === 'calendar' ? '日历' : mode === 'clock' ? '时钟' : '图片') + '模式');
+  updateSim();
+}
+
+// ==================== 画布渲染 ====================
+const BLACK = '#000', WHITE = '#fff', RED = '#e74c3c', YELLOW = '#f1c40f';
+
+function isLarge() { return canvas.height >= 400; }
+
+function drawBattery(x, y, iw, voltage) {
+  const level = Math.min(100, Math.max(0, Math.round((voltage - 2500) / (4200 - 2500) * 100)));
+  ctx.fillStyle = WHITE; ctx.fillRect(x - iw, y, iw, 10);
+  ctx.strokeStyle = BLACK; ctx.strokeRect(x - iw, y, iw, 10);
+  ctx.fillStyle = BLACK; ctx.fillRect(x - iw, y + 4, 2, 2);
+  ctx.fillStyle = BLACK; ctx.fillRect(x - iw + 2, y + 2, Math.floor(iw * level / 100), 6);
+  ctx.fillStyle = BLACK;
+  ctx.font = '9px sans-serif';
+  const vt = (voltage / 1000).toFixed(2) + 'V';
+  ctx.textAlign = 'right';
+  ctx.fillText(vt, x - iw - 4, y + 9);
+  ctx.textAlign = 'start';
+}
+
+function drawDateHeader(tm, lunar, data) {
+  const large = isLarge();
+  const x = 10, y = large ? 36 : 26;
+  ctx.textAlign = 'start';
+
+  // 公历日期
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillStyle = RED; ctx.fillText(tm.year, x, y);
+  const yw = ctx.measureText(tm.year + '').width;
+  ctx.font = '12px "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = BLACK; ctx.fillText('年', x + yw, y);
+
+  const monW = ctx.measureText(tm.month + '').width;
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillStyle = RED; ctx.fillText(tm.month, x + yw + 14, y);
+  ctx.font = '12px "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = BLACK; ctx.fillText('月', x + yw + 14 + monW, y);
+
+  // 农历
+  let tx = x + yw + 14 + monW + 16;
+  ctx.font = '9px "Microsoft YaHei", sans-serif';
+  const lunarStr = (lunar.isLeap ? '闰' : '') + lunar.monthStr + lunar.dayStr;
+  ctx.fillStyle = BLACK; ctx.fillText(lunarStr, tx, y);
+  const lunarW = ctx.measureText(lunarStr).width;
+  ctx.fillStyle = RED;
+  ctx.fillText(' [' + getWeekOfYear(tm) + '周]', tx + lunarW, y);
+
+  // 干支
+  ctx.fillStyle = BLACK;
+  const sb = LunarCalendar.getStemBranch(lunar.year);
+  ctx.fillText(' ' + sb.stem + sb.branch + '年', tx, y - 13);
+  const sbW = ctx.measureText(' ' + sb.stem + sb.branch + '年').width;
+  ctx.fillStyle = RED;
+  ctx.fillText(' [' + sb.animal + ']', tx + sbW, y - 13);
+
+  // 电池
+  drawBattery(data.width - 10 - 2, large ? 14 : 4, 20, data.voltage);
+
+  // SSID
+  ctx.fillStyle = BLACK;
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(data.ssid, data.width - 10, y);
+  ctx.textAlign = 'start';
+}
+
+function getWeekOfYear(tm) {
+  const d = new Date(tm.year, tm.month - 1, tm.day);
+  const start = new Date(d.getFullYear(), 0, 1);
+  const diff = (d - start + (start.getTimezoneOffset() - d.getTimezoneOffset()) * 60000) / 86400000;
+  return Math.ceil((diff + start.getDay() + 1) / 7);
+}
+
+function drawWeekHeader(x, y, data) {
+  const large = isLarge();
+  const w = Math.floor((data.width - 2 * x) / 7);
+  const h = large ? 32 : 22;
+  ctx.font = (large ? '12px' : '9px') + ' "Microsoft YaHei", sans-serif';
+
+  for (let i = 0; i < 7; i++) {
+    const day = (data.weekStart + i) % 7;
+    const bg = (day === 0 || day === 6) ? RED : BLACK;
+    ctx.fillStyle = bg;
+    ctx.fillRect(x + i * w, y, i === 6 ? (data.width - x - (x + i * w)) : w, h);
+    ctx.fillStyle = WHITE;
+    ctx.textAlign = 'center';
+    ctx.fillText(LunarCalendar.weekStr[day], x + i * w + w / 2, y + h / 2 + 4);
+    ctx.textAlign = 'start';
+  }
+}
+
+function drawMonthDays(x, y, tm, lunarBase, data) {
+  const firstDayWeek = new Date(tm.year, tm.month - 1, 1).getDay();
+  const adjustedFirstDay = (firstDayWeek - data.weekStart + 7) % 7;
+  const monthMaxDays = new Date(tm.year, tm.month, 0).getDate();
+  const monthDayRows = 1 + Math.floor((monthMaxDays - (7 - adjustedFirstDay) + 6) / 7);
+
+  const bw = Math.floor((data.width - x - 10) / 7);
+  const bh = Math.floor((data.height - y - 10) / monthDayRows);
+  const large = isLarge();
+  const cr = large ? 14 : 10;
+
+  // 绘制网格虚线
+  if (large) {
+    ctx.strokeStyle = BLACK; ctx.lineWidth = 0.5;
+    ctx.setLineDash([1, 5]);
+    for (let i = 1; i < monthDayRows; i++) {
+      ctx.beginPath(); ctx.moveTo(x, y + i * bh); ctx.lineTo(x + 7 * bw, y + i * bh); ctx.stroke();
+    }
+    for (let i = 1; i < 7; i++) {
+      ctx.beginPath(); ctx.moveTo(x + i * bw, y); ctx.lineTo(x + i * bw, y + monthDayRows * bh); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  for (let i = 0; i < monthMaxDays; i++) {
+    const day = i + 1;
+    const actualWeek = (firstDayWeek + i) % 7;
+    const displayWeek = (adjustedFirstDay + i) % 7;
+    const weekend = actualWeek === 0 || actualWeek === 6;
+    const lunar = LunarCalendar.solarToLunar(tm.year, tm.month, day);
+    const festive = getFestival(tm.year, tm.month, day, lunar, actualWeek);
+
+    const bx = x + (bw - 2 * cr) / 2 + displayWeek * bw;
+    const by = y + (bh - 2 * cr) / 2 + Math.floor((i + adjustedFirstDay) / 7) * bh;
+
+    // 今天高亮
+    if (day === tm.day) {
+      ctx.fillStyle = RED;
+      ctx.beginPath(); ctx.arc(bx + cr, by + cr - 2, cr + 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = WHITE;
+    } else {
+      ctx.fillStyle = weekend ? RED : BLACK;
+    }
+
+    // 日期数字
+    ctx.font = 'bold ' + (large ? '16px' : '13px') + ' sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(day, bx + cr, by + 5);
+
+    // 农历或节日
+    let subText = lunar.dayStr;
+    let subColor = (day !== tm.day && festive) ? RED : (day === tm.day ? WHITE : BLACK);
+
+    if (festive && day !== tm.day) subText = festive.length > 3 ? festive.slice(0, 3) : festive;
+    else if (lunar.day === 1) subText = (lunar.isLeap ? '闰' : '') + lunar.monthStr;
+
+    ctx.font = (large ? '10px' : '8px') + ' "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = subColor;
+    ctx.fillText(subText, bx + cr, by + (large ? 28 : 22));
+
+    // 调休标记
+    const key = tm.month + '-' + day;
+    if (tm.year === 2026 && holidays2026.has(key)) {
+      const isWork = workdays2026.has(key);
+      if (day === tm.day) {
+        const rx = bx + (large ? 34 : 26);
+        ctx.fillStyle = WHITE;
+        ctx.beginPath(); ctx.arc(rx, by - 1, large ? 8 : 7, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = RED;
+        ctx.beginPath(); ctx.arc(rx, by - 1, large ? 8 : 7, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.font = '8px "Microsoft YaHei", sans-serif';
+      ctx.fillStyle = isWork ? BLACK : RED;
+      ctx.fillText(isWork ? '班' : '休', bx + (large ? 34 : 26), by + (large ? 24 : 19));
+    }
+  }
+  ctx.textAlign = 'start';
+}
+
+function drawCalendar(data) {
+  const large = isLarge();
+  drawDateHeader(data.tm, data.lunar, data);
+  drawWeekHeader(10, large ? 42 : 30, data);
+  drawMonthDays(10, large ? 82 : 60, data.tm, data.lunar, data);
+}
+
+// 7段数码管绘制
+function draw7Segment(n, xLoc, yLoc, cS, fC, bC, nD) {
+  const S2 = 5 * cS, S3 = 2 * cS, S4 = 7 * cS;
+  const x1 = cS + 1, x2 = S3 + S2 + 1, y1 = yLoc + x1, y3 = yLoc + S3 + S4 + 1;
+  const segs = [[1,0],[0,1],[0,1],[1,0],[0,1],[0,1],[1,0]];
+  const nums = [0x3F,0x06,0x5B,0x4F,0x66,0x6D,0x7D,0x07,0x7F,0x6F,0x00,0x40];
+  const d0 = S2 + (3 * S3) + 2;
+  let cx = xLoc + nD * d0;
+
+  for (let cnt = nD; cnt > 0; cnt--) {
+    let digit;
+    if (n > 9) { digit = n % 10; n = Math.floor(n / 10); }
+    else if (n < 0 && cnt === 1) digit = 11;
+    else digit = Math.abs(n) % 10;
+    cx -= d0;
+
+    for (let j = 0; j < 7; j++) {
+      if (!((nums[digit] >> j) & 1)) continue;
+      ctx.fillStyle = fC;
+      if (j % 3 === 0) { // 水平段
+        ctx.fillRect(cx + cS, yLoc + (j === 0 ? 0 : j === 6 ? 2 * y3 - 2 * yLoc : y3) - cS / 2, S2, cS);
+      } else { // 垂直段
+        const sx = cx + (j === 1 || j === 2 ? S3 + S2 : 0);
+        const sy = yLoc + (j === 1 || j === 4 ? S3 : S3 + S4 - cS);
+        ctx.fillRect(sx, sy, cS, S4);
+      }
+    }
+  }
+}
+
+function drawClock(data) {
+  const large = isLarge();
+  const pad = large ? 100 : 40;
+  const tm = data.tm, lunar = data.lunar;
+
+  // 日期头
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillStyle = RED; ctx.textAlign = 'start';
+  ctx.fillText(tm.year, pad, 34);
+  const dateStr = tm.year + '年';
+  const dw = ctx.measureText(dateStr).width;
+  ctx.font = '12px "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = BLACK; ctx.fillText(dateStr.slice(4), pad + dw - 14, 34);
+
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillStyle = RED;
+  ctx.fillText(String(tm.month).padStart(2,'0'), pad + dw + 6, 34);
+  ctx.font = '12px "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = BLACK; ctx.fillText('月', pad + dw + 30, 34);
+  ctx.font = 'bold 18px sans-serif';
+  ctx.fillStyle = RED;
+  ctx.fillText(String(tm.day).padStart(2,'0'), pad + dw + 44, 34);
+  ctx.font = '12px "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = BLACK; ctx.fillText('日 ', pad + dw + 72, 34);
+
+  // 星期与农历
+  ctx.font = '9px "Microsoft YaHei", sans-serif';
+  ctx.fillText('星期' + LunarCalendar.weekStr[new Date(tm.year, tm.month - 1, tm.day).getDay()], pad, 54);
+  const lunarStr = (lunar.isLeap ? '闰' : '') + lunar.monthStr + lunar.dayStr;
+  ctx.fillText(lunarStr, pad + 50, 54);
+
+  // 电池
+  drawBattery(data.width - pad, 23, 20, data.voltage);
+
+  // 温度&SSID
+  ctx.textAlign = 'right';
+  const tempStr = data.temp + '℃[' + data.ssid.slice(-4) + ']';
+  ctx.fillText(tempStr, data.width - pad - 2, 54);
+
+  // 分隔线
+  ctx.strokeStyle = BLACK; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad - 10, 66); ctx.lineTo(data.width - pad + 10, 66); ctx.stroke();
+
+  // 大时间
+  const cS = Math.floor(data.height / 45);
+  const nD = 2;
+  const timeW = 2 * (nD * (11 * cS + 2) - 2 * cS) + 4 * cS;
+  const timeH = 20 * cS + 4;
+  const timeX = Math.floor((data.width - timeW) / 2);
+  const timeY = Math.floor((66 + (data.height - 66)) / 2 - timeH / 2);
+
+  // 绘制背景清除
+  ctx.fillStyle = WHITE;
+  ctx.fillRect(timeX - 10, timeY - 10, timeW + 20, timeH + 10);
+
+  // 时
+  draw7Segment(tm.hour, timeX, timeY, cS, BLACK, WHITE, nD);
+
+  // 冒号
+  const colonX = timeX + (nD * (11 * cS + 2) - 2 * cS) + 2 * cS;
+  ctx.fillStyle = BLACK;
+  ctx.fillRect(colonX, timeY + 4.5 * cS + 1, 2 * cS, 2 * cS);
+  ctx.fillRect(colonX, timeY + 13.5 * cS + 3, 2 * cS, 2 * cS);
+
+  // 分
+  const minX = colonX + 4 * cS;
+  draw7Segment(tm.minute, minX, timeY, cS, BLACK, WHITE, nD);
+
+  // 底部分隔线
+  ctx.beginPath(); ctx.moveTo(pad - 10, data.height - 66); ctx.lineTo(data.width - pad + 10, data.height - 66); ctx.stroke();
+
+  // 底部干支
+  ctx.textAlign = 'start';
+  const sb = LunarCalendar.getStemBranch(lunar.year);
+  ctx.font = '12px "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = BLACK;
+  ctx.fillText(sb.stem + sb.branch, pad, data.height - 66 + 28);
+  const sbw = ctx.measureText(sb.stem + sb.branch).width;
+  ctx.fillStyle = RED;
+  ctx.fillText(sb.animal, pad + sbw, data.height - 66 + 28);
+  ctx.fillStyle = BLACK;
+  ctx.fillText('年', pad + sbw + 12, data.height - 66 + 28);
+
+  const weekNum = getWeekOfYear(tm);
+  ctx.fillText(' ' + weekNum + '周', pad, data.height - 66 + 46);
+
+  // 节气
+  ctx.textAlign = 'right';
+  const jq = LunarCalendar.getJieQi(tm.year, tm.month, tm.day);
+  if (jq) {
+    ctx.fillStyle = RED;
+    ctx.fillText(jq, data.width - pad, data.height - 66 + 28);
+  } else {
+    // 查找下一个节气
+    ctx.fillStyle = BLACK;
+    ctx.fillText('节气信息', data.width - pad, data.height - 66 + 28);
+  }
+}
+
+// 图片模式 (含抖动算法)
+function ditherFloydSteinberg(pixels, w, h, palette) {
+  const buf = new Float32Array(w * h * 3);
+  for (let i = 0; i < pixels.length; i++) buf[i] = pixels[i];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 3;
+      const oldR = buf[i], oldG = buf[i + 1], oldB = buf[i + 2];
+      let best = 0, bestDist = Infinity;
+      for (let p = 0; p < palette.length; p++) {
+        const dr = oldR - palette[p][0], dg = oldG - palette[p][1], db = oldB - palette[p][2];
+        const dist = dr * dr + dg * dg + db * db;
+        if (dist < bestDist) { bestDist = dist; best = p; }
+      }
+      const newR = palette[best][0], newG = palette[best][1], newB = palette[best][2];
+      const errR = oldR - newR, errG = oldG - newG, errB = oldB - newB;
+      buf[i] = newR; buf[i + 1] = newG; buf[i + 2] = newB;
+
+      const spread = (dx, dy, f) => {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+          const ni = (ny * w + nx) * 3;
+          buf[ni] += errR * f; buf[ni + 1] += errG * f; buf[ni + 2] += errB * f;
+        }
+      };
+      spread(1, 0, 7 / 16); spread(-1, 1, 3 / 16); spread(0, 1, 5 / 16); spread(1, 1, 1 / 16);
+    }
+  }
+  const out = new Uint8ClampedArray(buf.length);
+  for (let i = 0; i < buf.length; i++) out[i] = Math.max(0, Math.min(255, Math.round(buf[i])));
+  return out;
+}
+
+function loadImage() {
+  const file = document.getElementById('imageFile').files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    simImage = img;
+    applyImageDither();
+    addLog('图片已加载: ' + file.name);
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+function applyImageDither() {
+  if (!simImage) return;
+  const alg = document.getElementById('ditherAlg').value;
+  const mode = document.getElementById('imgColorMode').value;
+
+  let palette;
+  if (mode === 'bw') palette = [[255,255,255],[0,0,0]];
+  else if (mode === 'bwr') palette = [[255,255,255],[0,0,0],[255,0,0]];
+  else palette = [[255,255,255],[0,0,0],[255,0,0],[255,255,0]];
+
+  // 缩放图片到画布尺寸
+  const tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width = canvas.width;
+  tmpCanvas.height = canvas.height;
+  const tmpCtx = tmpCanvas.getContext('2d');
+  tmpCtx.drawImage(simImage, 0, 0, canvas.width, canvas.height);
+  const imgData = tmpCtx.getImageData(0, 0, canvas.width, canvas.height);
+
+  let processed;
+  if (alg === 'floyd') processed = ditherFloydSteinberg(imgData.data, canvas.width, canvas.height, palette);
+  else processed = imgData.data; // 简化：其他算法暂用原图
+
+  simDitherData = { data: processed, w: canvas.width, h: canvas.height };
+  switchMode('picture');
+  updateSim();
+}
+
+function clearPicture() {
+  simImage = null;
+  simDitherData = null;
+  switchMode('calendar');
+  updateSim();
+  addLog('图片已清除');
+}
+
+// ==================== 调试命令 ====================
+function sendDebugCmd() {
+  const cmd = document.getElementById('cmdInput').value.trim();
+  if (!cmd) return;
+  addLog(cmd, 'up');
+  // 模拟命令解析
+  const hex = cmd.replace(/\s/g, '');
+  if (hex === '9000') addLog('配置已保存', 'down');
+  else if (hex === '9100') addLog('系统已复位', 'down');
+  else if (hex === '9200') { addLog('系统已休眠', 'down'); simSleep(); }
+  else if (hex.startsWith('20')) addLog('时间已同步', 'down');
+  else addLog('命令已执行 (模拟)', 'down');
+  document.getElementById('cmdInput').value = '';
+}
+
+function simClearScreen() {
+  ctx.fillStyle = WHITE; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  addLog('清屏完成 (模拟)');
+}
+
+function simSleep() {
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = BLACK; ctx.font = '16px "Microsoft YaHei", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('休眠中...', canvas.width / 2, canvas.height / 2);
+  ctx.textAlign = 'start';
+  addLog('设备已休眠 (模拟)');
+}
+
+function simWake() {
+  addLog('设备已唤醒 (模拟)');
+  updateSim();
+}
+
+function simReset() {
+  simMode = 'calendar';
+  simImage = null;
+  simDitherData = null;
+  document.getElementById('simDate').value = '2026-06-14';
+  document.getElementById('simTime').value = '12:00';
+  addLog('系统已复位 (模拟)');
+  updateSim();
+}
+
+// ==================== 主渲染 ====================
+function updateSim() {
+  const w = canvas.width, h = canvas.height;
+
+  if (simMode === 'picture' && simDitherData) {
+    const imgData = new ImageData(simDitherData.data, simDitherData.w, simDitherData.h);
+    ctx.putImageData(imgData, 0, 0);
+    return;
+  }
+
+  if (simMode === 'picture') {
+    ctx.fillStyle = WHITE; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#aaa'; ctx.font = '14px "Microsoft YaHei", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('请上传图片', w / 2, h / 2);
+    ctx.textAlign = 'start';
+    return;
+  }
+
+  // 清屏
+  ctx.fillStyle = WHITE; ctx.fillRect(0, 0, w, h);
+
+  // 解析时间
+  const dateVal = document.getElementById('simDate').value || '2026-06-14';
+  const timeVal = document.getElementById('simTime').value || '12:00';
+  const [y, m, d] = dateVal.split('-').map(Number);
+  const [hh, mm] = timeVal.split(':').map(Number);
+  const weekStart = parseInt(document.getElementById('weekStart').value);
+  const voltage = parseInt(document.getElementById('battVoltage').value);
+  const temp = parseInt(document.getElementById('temperature').value);
+  const ssid = document.getElementById('ssid').value;
+
+  const tm = { year: y, month: m, day: d, hour: hh, minute: mm };
+  const lunar = LunarCalendar.solarToLunar(y, m, d);
+  const data = { width: w, height: h, tm, lunar, weekStart, voltage, temp, ssid };
+
+  switch (simMode) {
+    case 'calendar': drawCalendar(data); break;
+    case 'clock': drawClock(data); break;
+    default: break;
+  }
+}
+
+// 初始化
+document.getElementById('simDate').value = '2026-06-14';
+document.getElementById('simTime').value = '12:00';
+updateSim();
+addLog('模拟器已就绪');
+addLog('可用预设选择屏幕尺寸, 或通过右侧面板调试');
+
+// 定时刷新时钟
+setInterval(() => {
+  if (simMode === 'clock') {
+    const now = new Date();
+    document.getElementById('simTime').value = now.toTimeString().slice(0,5);
+    updateSim();
+  }
+  document.getElementById('debugTime').textContent = new Date().toLocaleTimeString();
+}, 1000);
+
+// 键盘快捷键
+document.addEventListener('keydown', e => {
+  switch (e.key.toLowerCase()) {
+    case '1': switchMode('calendar'); break;
+    case '2': switchMode('clock'); break;
+    case '3': switchMode('picture'); break;
+    case 'c': simClearScreen(); break;
+    case 'r': simReset(); break;
+  }
+});
+</script>
+</body>
+</html>
