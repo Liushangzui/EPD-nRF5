@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <time.h>
+#include <math.h>
 
 #include "Lunar.h"
 #include "fonts.h"
@@ -357,6 +358,91 @@ static void DrawInfoCard(Adafruit_GFX* gfx, int16_t x, int16_t y, int16_t w, int
     GFX_printf(gfx, "%s", content);
 }
 
+// ==================== 装饰元素: 梅兰竹菊 ====================
+
+// 画梅花 (5瓣, 简洁风格)
+static void DrawPlumBlossom(Adafruit_GFX* gfx, int16_t cx, int16_t cy, int16_t r) {
+    for (int i = 0; i < 5; i++) {
+        float angle = i * 72.0f * 3.14159f / 180.0f;
+        int16_t px = cx + (int16_t)(r * 0.9f * cosf(angle));
+        int16_t py = cy - (int16_t)(r * 0.9f * sinf(angle));
+        GFX_fillCircle(gfx, px, py, r / 3, GFX_BLACK);
+    }
+    GFX_fillCircle(gfx, cx, cy, r / 4, GFX_BLACK);
+}
+
+// 画兰花 (简洁曲线叶片)
+static void DrawOrchid(Adafruit_GFX* gfx, int16_t x, int16_t y, int16_t s) {
+    // 三片弧形叶
+    for (int i = 0; i < 3; i++) {
+        int16_t ox = x + i * s / 3;
+        int16_t startY = y + (i == 1 ? s / 2 : 0);
+        for (int16_t dy = 0; dy < s; dy += 2) {
+            int16_t dx = (int16_t)(sinf(dy * 0.08f) * (s / 4));
+            if (dy % 4 == 0)
+                GFX_drawPixel(gfx, ox + dx, startY - dy, GFX_BLACK);
+            GFX_drawPixel(gfx, ox - dx, startY - dy, GFX_BLACK);
+        }
+    }
+}
+
+// 画竹子 (竹节 + 竹叶)
+static void DrawBamboo(Adafruit_GFX* gfx, int16_t x, int16_t y, int16_t s) {
+    // 竹竿
+    int16_t segH = s / 4;
+    for (int i = 0; i < 4; i++) {
+        int16_t sy = y - i * segH;
+        GFX_drawFastVLine(gfx, x, sy - segH + 1, segH, GFX_BLACK);
+        // 竹节
+        GFX_drawFastHLine(gfx, x - 2, sy, 5, GFX_BLACK);
+        GFX_drawFastHLine(gfx, x - 1, sy - segH + 1, 3, GFX_BLACK);
+    }
+    // 竹叶
+    int16_t leafY = y - s + 2;
+    for (int i = 0; i < 3; i++) {
+        int16_t lx = x + (i - 1) * 4;
+        GFX_drawLine(gfx, lx, leafY, lx + 4, leafY - 5, GFX_BLACK);
+        GFX_drawLine(gfx, lx, leafY, lx - 4, leafY - 4, GFX_BLACK);
+    }
+}
+
+// 画菊花 (重瓣, 简洁风格)
+static void DrawChrysanthemum(Adafruit_GFX* gfx, int16_t cx, int16_t cy, int16_t r) {
+    // 外层花瓣
+    for (int i = 0; i < 8; i++) {
+        float angle = i * 45.0f * 3.14159f / 180.0f;
+        int16_t px = cx + (int16_t)(r * cosf(angle));
+        int16_t py = cy - (int16_t)(r * sinf(angle));
+        int16_t px2 = cx + (int16_t)(r * 1.4f * cosf(angle));
+        int16_t py2 = cy - (int16_t)(r * 1.4f * sinf(angle));
+        GFX_drawLine(gfx, px, py, px2, py2, GFX_BLACK);
+        GFX_fillCircle(gfx, px2, py2, 1, GFX_BLACK);
+    }
+    // 内层花瓣
+    for (int i = 0; i < 6; i++) {
+        float angle = (i * 60.0f + 30.0f) * 3.14159f / 180.0f;
+        int16_t px = cx + (int16_t)(r * 0.5f * cosf(angle));
+        int16_t py = cy - (int16_t)(r * 0.5f * sinf(angle));
+        GFX_drawLine(gfx, cx, cy, px, py, GFX_BLACK);
+    }
+    GFX_fillCircle(gfx, cx, cy, r / 5, GFX_BLACK);
+}
+
+// 绘制装饰元素区域
+static void DrawDecorElements(Adafruit_GFX* gfx, int16_t x, int16_t y, int16_t w, int16_t h) {
+    int16_t s = h - 4;  // 元素尺寸
+    int16_t spacing = w / 4;
+
+    // 梅
+    DrawPlumBlossom(gfx, x + spacing / 2, y + s / 2, s / 3);
+    // 兰
+    DrawOrchid(gfx, x + spacing + spacing / 2, y + s, s * 2 / 3);
+    // 竹
+    DrawBamboo(gfx, x + 2 * spacing + spacing / 2, y + s, s * 2 / 3);
+    // 菊
+    DrawChrysanthemum(gfx, x + 3 * spacing + spacing / 2, y + s / 2, s / 3);
+}
+
 // 现代单日日历
 static void DrawModernCalendar(Adafruit_GFX* gfx, tm_t* tm, struct Lunar_Date* Lunar, gui_data_t* data) {
     bool large = large_layout(data);
@@ -433,12 +519,18 @@ static void DrawModernCalendar(Adafruit_GFX* gfx, tm_t* tm, struct Lunar_Date* L
     GFX_setCursor(gfx, cx - lw / 2, gfx->ty + GFX_getFontHeight(gfx) + (large ? 6 : 4));
     GFX_printf(gfx, "%s", lunarStr);
 
+    // ── 装饰元素: 梅兰竹菊 ──
+    int16_t decorY = gfx->ty + GFX_getFontHeight(gfx) + (large ? 8 : 6);
+    int16_t decorH = large ? 24 : 18;
+    int16_t decorW = w - 2 * margin;
+    DrawDecorElements(gfx, margin, decorY, decorW, decorH);
+
     // ── 分隔线 ──
-    curY = large ? 160 : 128;
+    curY = decorY + decorH + (large ? 6 : 4);
     GFX_drawFastHLine(gfx, margin, curY, w - 2 * margin, GFX_BLACK);
 
     // ── 节气卡片 ──
-    curY = large ? 172 : 138;
+    curY += large ? 12 : 8;
     int16_t cardW = w - 2 * margin;
     int16_t cardH = large ? 56 : 44;
     int16_t cardSpacing = large ? 8 : 5;

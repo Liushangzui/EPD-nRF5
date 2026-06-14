@@ -507,6 +507,79 @@ function drawMonthDays(x, y, tm, lunarBase, data) {
 
 // ==================== 现代单日日历渲染 ====================
 
+// 装饰元素: 梅兰竹菊
+function drawPlumBlossom(cx, cy, r) {
+  ctx.fillStyle = BLACK;
+  for (let i = 0; i < 5; i++) {
+    const angle = i * 72 * Math.PI / 180;
+    const px = cx + r * 0.9 * Math.cos(angle);
+    const py = cy - r * 0.9 * Math.sin(angle);
+    ctx.beginPath(); ctx.arc(px, py, r / 3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.beginPath(); ctx.arc(cx, cy, r / 4, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawOrchid(x, y, s) {
+  ctx.strokeStyle = BLACK; ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    const ox = x + i * s / 3;
+    const startY = y + (i === 1 ? s / 2 : 0);
+    ctx.beginPath();
+    for (let dy = 0; dy < s; dy += 2) {
+      const dx = Math.sin(dy * 0.08) * (s / 4);
+      if (dy % 4 === 0) { ctx.moveTo(ox + dx, startY - dy); ctx.lineTo(ox + dx + 1, startY - dy); }
+      ctx.moveTo(ox - dx, startY - dy); ctx.lineTo(ox - dx + 1, startY - dy);
+    }
+    ctx.stroke();
+  }
+}
+
+function drawBamboo(x, y, s) {
+  ctx.strokeStyle = BLACK; ctx.lineWidth = 1;
+  const segH = Math.floor(s / 4);
+  for (let i = 0; i < 4; i++) {
+    const sy = y - i * segH;
+    ctx.beginPath(); ctx.moveTo(x, sy - segH + 1); ctx.lineTo(x, sy + 1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 2, sy); ctx.lineTo(x + 3, sy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 1, sy - segH + 1); ctx.lineTo(x + 2, sy - segH + 1); ctx.stroke();
+  }
+  const leafY = y - s + 2;
+  for (let i = 0; i < 3; i++) {
+    const lx = x + (i - 1) * 4;
+    ctx.beginPath(); ctx.moveTo(lx, leafY); ctx.lineTo(lx + 4, leafY - 5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(lx, leafY); ctx.lineTo(lx - 4, leafY - 4); ctx.stroke();
+  }
+}
+
+function drawChrysanthemum(cx, cy, r) {
+  ctx.strokeStyle = BLACK; ctx.lineWidth = 1;
+  for (let i = 0; i < 8; i++) {
+    const angle = i * 45 * Math.PI / 180;
+    const px = cx + r * Math.cos(angle);
+    const py = cy - r * Math.sin(angle);
+    const px2 = cx + r * 1.4 * Math.cos(angle);
+    const py2 = cy - r * 1.4 * Math.sin(angle);
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px2, py2); ctx.stroke();
+    ctx.fillStyle = BLACK; ctx.beginPath(); ctx.arc(px2, py2, 1, 0, Math.PI * 2); ctx.fill();
+  }
+  for (let i = 0; i < 6; i++) {
+    const angle = (i * 60 + 30) * Math.PI / 180;
+    const px = cx + r * 0.5 * Math.cos(angle);
+    const py = cy - r * 0.5 * Math.sin(angle);
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+  }
+  ctx.fillStyle = BLACK; ctx.beginPath(); ctx.arc(cx, cy, r / 5, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawDecorElements(x, y, w, h) {
+  const s = h - 4;
+  const spacing = w / 4;
+  drawPlumBlossom(x + spacing / 2, y + s / 2, s / 3);
+  drawOrchid(x + spacing + spacing / 2, y + s, s * 2 / 3);
+  drawBamboo(x + 2 * spacing + spacing / 2, y + s, s * 2 / 3);
+  drawChrysanthemum(x + 3 * spacing + spacing / 2, y + s / 2, s / 3);
+}
+
 function findNextFestival(year, month, day, weekDay) {
   const lunar = LunarCalendar.solarToLunar(year, month, day);
   // 搜索未来365天
@@ -600,13 +673,19 @@ function drawModernCalendar(data) {
   const lunarStr = (lunar.isLeap ? '闰' : '') + lunar.monthStr + lunar.dayStr;
   ctx.fillText(lunarStr, cx, curY + 56);
 
+  // ── 装饰元素: 梅兰竹菊 ──
+  const decorY = curY + 64;
+  const decorH = large ? 24 : 18;
+  const decorW = w - 2 * margin;
+  drawDecorElements(margin, decorY, decorW, decorH);
+
   // ── 分隔线 ──
-  curY = large ? 170 : 138;
+  curY = decorY + decorH + (large ? 6 : 4);
   ctx.strokeStyle = BLACK;
   ctx.beginPath(); ctx.moveTo(margin, curY); ctx.lineTo(w - margin, curY); ctx.stroke();
 
   // ── 节气卡片 ──
-  curY = large ? 182 : 148;
+  curY += large ? 12 : 8;
   const cardW = w - 2 * margin;
   const cardH = large ? 56 : 44;
   const cardSpacing = large ? 8 : 5;
@@ -667,7 +746,10 @@ function drawModernCalendar(data) {
 }
 
 function drawCalendar(data) {
-  drawModernCalendar(data);
+  const large = isLarge();
+  drawDateHeader(data.tm, data.lunar, data);
+  drawWeekHeader(10, large ? 42 : 30, data);
+  drawMonthDays(10, large ? 82 : 60, data.tm, data.lunar, data);
 }
 
 // 7段数码管绘制
